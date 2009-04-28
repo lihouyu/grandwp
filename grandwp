@@ -1,0 +1,144 @@
+#!/bin/bash
+#
+# grandwp - GNOME Random Wallpaper
+# 
+# Copyright (c) 2009 HouYu Li <karadog@gmail.com> 
+# 
+# When executed, it will randomly pick up a wallpaper image from the user
+# defined wallpaper directory and set it as current GNOME desktop wallpaper.
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# 
+
+USR_PROFILE=$HOME/.grandwprc
+USR_WPROOT=$HOME/Pictures
+IMG_PAT="*.jpg *.png *.svg"
+
+usage()
+{
+cat << EOF
+usage: $0 options
+
+This script randomly pick up a wallpaper image from the user
+defined wallpaper directory and set it as current GNOME desktop wallpaper.
+
+OPTIONS:
+    -h      Show this message
+    -c      Configure wallpaper directory
+    -s      Run silently. Using the default \$HOME/Pictures as wallpaper dir 
+                if not configured.
+EOF
+}
+
+OPTYPE=normal
+while getopts "hcs" OPTION
+do
+    case $OPTION in
+        h)
+            usage
+            exit 1
+            ;;
+        c)
+            OPTYPE=configure
+            ;;
+        s)
+            OPTYPE=silent
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [ -f $USR_PROFILE ]
+then
+    TMP_WPROOT=`cat $USR_PROFILE 2>/dev/null`
+    if [ ! -z $TMP_WPROOT ]
+    then
+        USR_WPROOT=$TMP_WPROOT
+    fi
+fi
+
+if [ "$OPTYPE" == "silent" ]
+then
+	touch $USR_PROFILE
+	if [ "$?" != "0" ]
+	then
+		echo "Unable to create configuration file $USR_PROFILE!" >&2
+		exit 1
+	fi
+	echo $USR_WPROOT > $USR_PROFILE
+	if [ "$?" != "0" ]
+	then
+		echo "Unable to modify configuration file!" >&2
+		exit 1
+	fi
+fi
+
+if [ ! -f $USR_PROFILE ] || [ "$OPTYPE" == "configure" ]
+then
+	if [ ! $1 ]
+	then
+		echo "It seems thar you are running \"GNOME Random Wallpaper\" for the first time."
+	fi
+	echo "Please give me a root path where all wallpapers resides in [$USR_WPROOT]: "
+	read wproot
+	if [ -z $wproot ]
+    then
+        echo "Empty input! Using default $USR_WPROOT!"
+        wproot=$USR_WPROOT
+    fi
+	touch $USR_PROFILE
+	if [ "$?" != "0" ]
+	then
+		echo "Unable to create configuration file $USR_PROFILE!" >&2
+		exit 1
+	fi
+	echo $wproot > $USR_PROFILE
+	if [ "$?" != "0" ]
+	then
+		echo "Unable to modify configuration file!" >&2
+		exit 1
+	fi
+fi
+
+GCONFTOOL=`which gconftool-2`
+if [ -z $GCONFTOOL ]
+then
+    echo "gconftool-2 not found!" >&2
+    exit 1
+fi
+
+USR_WPROOT=`cat $USR_PROFILE 2>/dev/null`
+cd $USR_WPROOT 2>/dev/null
+if [ "$?" != "0" ]
+then
+    echo "Directory $USR_WPROOT does not exist!" >&2
+    exit 1
+fi
+
+WPCNT=`ls $IMG_PAT 2>/dev/null | wc -l`
+if [ "$WPCNT" == "0" ]
+then
+	echo "No files in the given directory! Exit..." >&2
+	exit 1
+fi
+
+PICKED=`ls $IMG_PAT 2>/dev/null | while read f; do echo "$(expr $RANDOM % 1000):$f"; done | sort -n | sed 's/[0-9]*://' | head -n 1`
+
+$GCONFTOOL --type string --set /desktop/gnome/background/picture_filename $USR_WPROOT/$PICKED
+
+exit 0
+
