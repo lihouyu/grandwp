@@ -25,6 +25,9 @@ USR_PROFILE=$HOME/.grandwprc
 USR_WPROOT=$HOME/Pictures
 IMG_PAT="*.jpg *.png *.svg"
 
+# Using following program to find DBUS_SESSION_BUS_ADDRESS variable
+PROG_OF_DBUS="gnome-session-binary"
+
 usage()
 {
 cat << EOF
@@ -96,10 +99,10 @@ then
 	echo "Please give me a root path where all wallpapers resides in [$USR_WPROOT]: "
 	read wproot
 	if [ -z $wproot ]
-    then
-        echo "Empty input! Using default $USR_WPROOT!"
-        wproot=$USR_WPROOT
-    fi
+	then
+		echo "Empty input! Using default $USR_WPROOT!"
+		wproot=`realpath $USR_WPROOT`
+	fi
 	touch $USR_PROFILE
 	if [ "$?" != "0" ]
 	then
@@ -114,12 +117,25 @@ then
 	fi
 fi
 
-GCONFTOOL=`which gconftool-2`
-if [ -z $GCONFTOOL ]
+# Extract the DBUS_SESSION_BUS_ADDRESS variable from the environ of the program
+# and then export it for the script to use
+PROG_PID=$(pidof -s $PROG_OF_DBUS)
+export DBUS_SESSION_BUS_ADDRESS=$(cat "/proc/""$PROG_PID""/environ" \
+        |tr '\0' '\n' \
+        |grep "DBUS_SESSION_BUS_ADDRESS" \
+        |cut -d "=" -f 2-)
+
+GSETTOOL=`which gsettings`
+if [ -z $GSETTOOL ]
 then
-    echo "gconftool-2 not found!" >&2
+    echo "gsettings not found!" >&2
     exit 1
 fi
+
+# Get current wallpaper base filename
+CURR_WP_URI=$($GSETTOOL get org.gnome.desktop.background picture-uri \
+        |sed -e "s/'//g")
+CURR_WP=$(basename "$CURR_WP_URI")
 
 USR_WPROOT=`cat $USR_PROFILE 2>/dev/null`
 cd $USR_WPROOT 2>/dev/null
@@ -136,9 +152,11 @@ then
 	exit 1
 fi
 
-PICKED=`ls $IMG_PAT 2>/dev/null | while read f; do echo "$(expr $RANDOM % 1000):$f"; done | sort -n | sed 's/[0-9]*://' | head -n 1`
+RAND_WP=$(ls |grep -v "$CURR_WP" |sort -R |head -n 1)
 
-$GCONFTOOL --type string --set /desktop/gnome/background/picture_filename $USR_WPROOT/$PICKED
+# Set the wallpaper
+$GSETTOOL set org.gnome.desktop.background picture-uri \
+        "file://""$USR_WPROOT""/""$RAND_WP"
 
 exit 0
 
